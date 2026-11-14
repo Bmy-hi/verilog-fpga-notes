@@ -1,0 +1,5 @@
+[
+    { "id": "01", "slug": "01-blocking-vs-nonblocking", "title": "Blocking vs Non-blocking", "tag": "基礎語法", "summary": "= 和 <= 差在哪？什麼時候該用哪一個。" },
+    { "id": "02", "slug": "02-avoid-latch", "title": "如何避免意外產生 Latch", "tag": "組合邏輯", "summary": "if 沒寫 else、case 沒寫 default 的後果。" },
+    { "id": "03", "slug": "03-fsm-design", "title": "有限狀態機 FSM 三段式寫法", "tag": "狀態機", "summary": "用三個 always 區塊寫出乾淨的 Moore FSM。" }
+]
