@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="note-id" content="02">
+    <title>如何避免意外產生 Latch | Verilog / FPGA 筆記站</title>
+    <link rel="stylesheet" href="../assets/style.css">
+    <script src="../assets/site.js" defer></script>
+</head>
+<body>
+    <header class="site">
+        <a href="../">⚡ Verilog / FPGA 筆記站</a>
+        <div class="sub">數位系統設計 — 一個概念一頁</div>
+    </header>
+    <main>
+        <span class="tag">組合邏輯</span>
+        <h1>#02 如何避免意外產生 Latch</h1>
+
+        <section id="concept">
+            <h2>💡 概念</h2>
+            <p>組合邏輯的輸出應該<b>只由當下的輸入決定</b>。如果在 <code>always @(*)</code> 裡，某些條件下沒有指定輸出，代表那時候輸出要「保持原值」——這需要記憶元件，合成工具就會推出一顆 <b>閂鎖器（latch）</b>。</p>
+            <p>Latch 是 level-sensitive，容易造成時序分析困難與毛刺（glitch）問題，在 FPGA 上幾乎都是 bug。Vivado 會在合成報告出現 <code>[Synth 8-327] inferring latch</code> 警告。</p>
+        </section>
+
+        <section id="code">
+            <h2>🧩 程式碼</h2>
+            <p>4 對 1 多工器（MUX），用「先給預設值」的寫法保證每條路徑都有指定：</p>
+<pre><code class="verilog">module mux4 (
+    input  wire [1:0] sel,
+    input  wire [7:0] a, b, c, d,
+    output reg  [7:0] y
+);
+    always @(*) begin
+        y = 8'd0;          // 預設值：保證所有路徑都有指定
+        case (sel)
+            2'd0: y = a;
+            2'd1: y = b;
+            2'd2: y = c;
+            2'd3: y = d;
+            default: y = 8'd0;
+        endcase
+    end
+endmodule</code></pre>
+        </section>
+
+        <section id="hardware">
+            <h2>🔌 合成後的硬體</h2>
+            <p>正確寫法只會合成出純組合的 MUX（在 FPGA 上用 LUT 實現），沒有任何記憶元件：</p>
+<pre class="ascii">   a ──┐
+   b ──┤ MUX ├──► y
+   c ──┤ 4:1 │
+   d ──┘  ▲
+          sel</pre>
+            <p>錯誤寫法則會在 MUX 後面多一顆 latch，<code>y</code> 在漏掉的條件下會「卡住」上一個值。</p>
+        </section>
+
+        <section id="pitfalls">
+            <h2>⚠️ 常見錯誤</h2>
+            <p><b>1. if 沒有 else</b></p>
+<pre class="bad"><code>always @(*) begin
+    if (en) y = a;     // en=0 時 y 沒被指定 → latch
+end</code></pre>
+<pre class="good"><code>always @(*) begin
+    if (en) y = a;
+    else    y = 8'd0;
+end</code></pre>
+            <p><b>2. case 沒有涵蓋所有值也沒有 default</b></p>
+<pre class="bad"><code>always @(*) begin
+    case (sel)
+        2'd0: y = a;
+        2'd1: y = b;   // sel=2,3 → latch
+    endcase
+end</code></pre>
+<pre class="good"><code>always @(*) begin
+    case (sel)
+        2'd0:    y = a;
+        2'd1:    y = b;
+        default: y = 8'd0;
+    endcase
+end</code></pre>
+            <p><b>3. 多個輸出只指定了一部分</b>：一個 always 裡有 <code>y</code> 和 <code>z</code>，某個分支只寫了 <code>y</code>，<code>z</code> 一樣會變 latch。解法同上——在 always 開頭把<b>每一個</b>輸出都給預設值。</p>
+        </section>
+
+        <section id="summary">
+            <h2>✅ 重點整理</h2>
+            <ul>
+                <li>組合 always 中「沒被指定」= 保持原值 = latch。</li>
+                <li>最穩的寫法：always 開頭先給所有輸出預設值。</li>
+                <li>if 要有 else，case 要有 default。</li>
+                <li>合成後一定要看報告有沒有 <code>inferring latch</code> 警告。</li>
+            </ul>
+        </section>
+    </main>
+    <footer>由 CLAUDE.md 規則驅動的靜態筆記站 · GitHub Pages</footer>
+</body>
+</html>
