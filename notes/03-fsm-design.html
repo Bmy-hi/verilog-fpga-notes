@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="note-id" content="03">
+    <title>有限狀態機 FSM 三段式寫法 | Verilog / FPGA 筆記站</title>
+    <link rel="stylesheet" href="../assets/style.css">
+    <script src="../assets/site.js" defer></script>
+</head>
+<body>
+    <header class="site">
+        <a href="../">⚡ Verilog / FPGA 筆記站</a>
+        <div class="sub">數位系統設計 — 一個概念一頁</div>
+    </header>
+    <main>
+        <span class="tag">狀態機</span>
+        <h1>#03 有限狀態機 FSM 三段式寫法</h1>
+
+        <section id="concept">
+            <h2>💡 概念</h2>
+            <p><b>有限狀態機（Finite State Machine, FSM）</b>由三部分組成：<b>狀態暫存器</b>（記住現在在哪個狀態）、<b>次態邏輯</b>（根據輸入決定下一個狀態）、<b>輸出邏輯</b>。</p>
+            <p>三段式寫法把這三部分各寫成一個 always：一個循序、兩個組合。好處是每個區塊職責單一，不容易寫出 latch 或時序錯誤，也最容易對照狀態圖除錯。</p>
+            <p>本例是 <b>Moore 機</b>（輸出只看狀態）：偵測序列 <code>101</code>，偵測到時 <code>found</code> 拉高一拍（允許重疊）。</p>
+        </section>
+
+        <section id="code">
+            <h2>🧩 程式碼</h2>
+<pre><code class="verilog">module seq101 (
+    input  wire clk,
+    input  wire rst_n,
+    input  wire din,
+    output reg  found
+);
+    localparam S0   = 2'd0,   // 還沒看到任何東西
+               S1   = 2'd1,   // 看到 1
+               S10  = 2'd2,   // 看到 10
+               S101 = 2'd3;   // 看到 101
+
+    reg [1:0] state, next_state;
+
+    // ① 狀態暫存器（循序）
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) state &lt;= S0;
+        else        state &lt;= next_state;
+    end
+
+    // ② 次態邏輯（組合）
+    always @(*) begin
+        next_state = state;           // 預設：留在原狀態
+        case (state)
+            S0:   next_state = din ? S1   : S0;
+            S1:   next_state = din ? S1   : S10;
+            S10:  next_state = din ? S101 : S0;
+            S101: next_state = din ? S1   : S10;
+            default: next_state = S0;
+        endcase
+    end
+
+    // ③ 輸出邏輯（組合，Moore）
+    always @(*) begin
+        found = (state == S101);
+    end
+endmodule</code></pre>
+        </section>
+
+        <section id="hardware">
+            <h2>🔌 合成後的硬體</h2>
+            <p>2 個 DFF 存 <code>state</code>，前後各一團組合邏輯：</p>
+<pre class="ascii">          ┌──────────────┐   next   ┌───────┐  state  ┌──────────┐
+  din ───►│  次態邏輯 ②   ├─────────►│ DFF×2 ├────┬───►│ 輸出邏輯③ ├──► found
+          └──────▲───────┘          │   ①   │    │    └──────────┘
+                 │                  └───▲───┘    │
+                 └─────────────────────┼────────┘
+                                       clk</pre>
+            <p>狀態轉移圖：</p>
+            <table>
+                <tr><th>現在狀態</th><th>din=0</th><th>din=1</th><th>found</th></tr>
+                <tr><td>S0</td><td>S0</td><td>S1</td><td>0</td></tr>
+                <tr><td>S1</td><td>S10</td><td>S1</td><td>0</td></tr>
+                <tr><td>S10</td><td>S0</td><td>S101</td><td>0</td></tr>
+                <tr><td>S101</td><td>S10</td><td>S1</td><td>1</td></tr>
+            </table>
+        </section>
+
+        <section id="pitfalls">
+            <h2>⚠️ 常見錯誤</h2>
+            <p><b>1. 次態邏輯沒有預設值</b> → 產生 latch（見 <a href="02-avoid-latch.html">#02</a>）。</p>
+<pre class="bad"><code>always @(*) begin
+    case (state)
+        S0: if (din) next_state = S1;   // din=0 沒指定
+    endcase
+end</code></pre>
+<pre class="good"><code>always @(*) begin
+    next_state = state;
+    case (state)
+        S0: if (din) next_state = S1;
+    endcase
+end</code></pre>
+            <p><b>2. 狀態用魔術數字</b>：<code>state &lt;= 2'd2;</code> 讀不懂也難改。一律用 <code>localparam</code> 命名。</p>
+            <p><b>3. 在狀態暫存器 always 裡順便算輸出</b>：輸出會多延遲一拍，和狀態圖對不上。輸出要放在獨立的組合 always。</p>
+        </section>
+
+        <section id="summary">
+            <h2>✅ 重點整理</h2>
+            <ul>
+                <li>三段式：狀態暫存器（<code>&lt;=</code>）＋ 次態邏輯（<code>=</code>）＋ 輸出邏輯（<code>=</code>）。</li>
+                <li>次態邏輯開頭寫 <code>next_state = state;</code> 避免 latch。</li>
+                <li>狀態用 <code>localparam</code> 命名，case 加 <code>default</code>。</li>
+                <li>Moore 輸出只看 <code>state</code>；Mealy 輸出還會看輸入。</li>
+            </ul>
+        </section>
+    </main>
+    <footer>由 CLAUDE.md 規則驅動的靜態筆記站 · GitHub Pages</footer>
+</body>
+</html>
