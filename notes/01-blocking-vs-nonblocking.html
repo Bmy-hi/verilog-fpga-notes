@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="note-id" content="01">
+    <title>Blocking vs Non-blocking | Verilog / FPGA 筆記站</title>
+    <link rel="stylesheet" href="../assets/style.css">
+    <script src="../assets/site.js" defer></script>
+</head>
+<body>
+    <header class="site">
+        <a href="../">⚡ Verilog / FPGA 筆記站</a>
+        <div class="sub">數位系統設計 — 一個概念一頁</div>
+    </header>
+    <main>
+        <span class="tag">基礎語法</span>
+        <h1>#01 Blocking vs Non-blocking</h1>
+
+        <section id="concept">
+            <h2>💡 概念</h2>
+            <p><b>Blocking assignment（<code>=</code>）</b>會「立刻」更新左邊的變數，下一行看到的就是新值，行為像一般程式語言。</p>
+            <p><b>Non-blocking assignment（<code>&lt;=</code>）</b>則是先把右邊全部算完，等這個時間點的所有敘述都執行完，才「同時」更新左邊。</p>
+            <p>這正好對應硬體：一排 <b>D 型正反器（D flip-flop）</b>在同一個 clock edge 同時取樣、同時更新。所以規則很簡單：<b>循序邏輯用 <code>&lt;=</code>，組合邏輯用 <code>=</code></b>。</p>
+        </section>
+
+        <section id="code">
+            <h2>🧩 程式碼</h2>
+            <p>三級移位暫存器（shift register），每個 clock 把資料往後推一格：</p>
+<pre><code class="verilog">module shift3 (
+    input  wire clk,
+    input  wire rst_n,
+    input  wire d,
+    output reg  q3
+);
+    reg q1, q2;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            q1 &lt;= 1'b0;
+            q2 &lt;= 1'b0;
+            q3 &lt;= 1'b0;
+        end else begin
+            q1 &lt;= d;
+            q2 &lt;= q1;   // 拿到的是「舊的」q1
+            q3 &lt;= q2;   // 拿到的是「舊的」q2
+        end
+    end
+endmodule</code></pre>
+        </section>
+
+        <section id="hardware">
+            <h2>🔌 合成後的硬體</h2>
+            <p>三個 DFF 串接，資料需要 3 個 clock 才會從 <code>d</code> 走到 <code>q3</code>：</p>
+<pre class="ascii">        ┌────┐     ┌────┐     ┌────┐
+  d ───►│ D Q├─q1─►│ D Q├─q2─►│ D Q├───► q3
+        │ &gt;  │     │ &gt;  │     │ &gt;  │
+        └─┬──┘     └─┬──┘     └─┬──┘
+  clk ────┴──────────┴──────────┘</pre>
+            <p>如果把 <code>&lt;=</code> 全換成 <code>=</code>，<code>q1 = d; q2 = q1; q3 = q2;</code> 會在同一瞬間連鎖更新，合成工具只會留下<b>一個</b> DFF，三個輸出都等於 <code>d</code> 延遲一拍。</p>
+        </section>
+
+        <section id="pitfalls">
+            <h2>⚠️ 常見錯誤</h2>
+            <p><b>1. 在時序 always 裡用 <code>=</code></b>：模擬結果會依敘述順序而變，和硬體不符。</p>
+<pre class="bad"><code>always @(posedge clk) begin
+    q1 = d;
+    q2 = q1;   // q2 會直接變成 d
+end</code></pre>
+<pre class="good"><code>always @(posedge clk) begin
+    q1 &lt;= d;
+    q2 &lt;= q1;
+end</code></pre>
+            <p><b>2. 同一個 always 混用 <code>=</code> 與 <code>&lt;=</code></b>：可讀性差，也容易產生模擬/合成不一致。一個 always 只用一種。</p>
+            <p><b>3. 在兩個 always 裡指定同一個 reg</b>：會變成 multiple driver，合成報錯。</p>
+<pre class="bad"><code>always @(posedge clk) cnt &lt;= cnt + 1;
+always @(posedge clk) if (clr) cnt &lt;= 0;</code></pre>
+<pre class="good"><code>always @(posedge clk)
+    if (clr) cnt &lt;= 0;
+    else     cnt &lt;= cnt + 1;</code></pre>
+        </section>
+
+        <section id="summary">
+            <h2>✅ 重點整理</h2>
+            <ul>
+                <li><code>=</code> 立即更新；<code>&lt;=</code> 等這個時間點結束才一起更新。</li>
+                <li>循序邏輯（<code>posedge clk</code>）一律用 <code>&lt;=</code>。</li>
+                <li>組合邏輯（<code>always @(*)</code>）一律用 <code>=</code>。</li>
+                <li>一個 always 只用一種指定方式；一個 reg 只在一個 always 裡被指定。</li>
+            </ul>
+        </section>
+    </main>
+    <footer>由 CLAUDE.md 規則驅動的靜態筆記站 · GitHub Pages</footer>
+</body>
+</html>
